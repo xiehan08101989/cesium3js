@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Cesium_3JS</title>
+    <link rel='stylesheet' href='/stylesheets/style.css' />
+    <link rel="stylesheet" href="/stylesheets/cesium3js.css"/>
+    <link rel="stylesheet" href="/javascripts/ThirdParty/Cesium/Widgets/widgets.css"/>
+  </head>
+  <body>
+    <div id="cesiumcontainer"></div>
+    <div id="threecontainer"></div>
+
+    <script src = '/javascripts/ThirdParty/Cesium163/Cesium.js'></script>
+    <script src = '/javascripts/ThirdParty/Three/three.min.js'></script>
+    <script src = '/javascripts/ThirdParty/Three/THREE.MeshLine.js'></script>
+    <script src = '/javascripts/ThirdParty/Three/EffectComposer.js'></script>
+    <script src = '/javascripts/ThirdParty/Three/RenderPass.js'></script>
+    <script src = '/javascripts/ThirdParty/Three/ShaderPass.js'></script>
+    <script src = '/javascripts/ThirdParty/Three/CopyShader.js'></script>
+    <script src = '/javascripts/ThirdParty/Three/LuminosityHighPassShader.js'></script>
+    <script src = '/javascripts/ThirdParty/Three/UnrealBloomPass.js'></script>
+    <script src = '/javascripts/ThirdParty/Three/MTLLoader.js'></script>
+    <script src = '/javascripts/ThirdParty/Three/OBJLoader.js'></script>
+    <script src = '/javascripts/ThirdParty/turf.min.js'></script>
+    <script src = '/javascripts/Cesium3JS.js'></script>
+    <script >
+        var _3OBJ = new THREE.OBJLoader(); //obj加载器
+        var _3MTL = new THREE.MTLLoader(); //材质文件加载器
+
+        let cesiumid = document.getElementById('cesiumcontainer');
+        let threeid = document.getElementById('threecontainer');
+        let extent = [115.23,39.55,116.23,41.55]
+        let c3js = new Cesium3JS({
+            minExtent:[extent[0],extent[1]],
+            maxExtent:[extent[2],extent[3]],
+        });
+        c3js.init(cesiumid,null,threeid,null);
+        console.log(window.viewer.scene.context.webgl2);
+        //加载obj模型
+        let obj1 = new MyThreeObj({
+            mtlurl:'/images/111.mtl',
+            objurl:'/images/111.obj',
+            center:[115.23,39.553,0],
+        })
+        c3js.add(obj1);
+        //绘制平面
+        let myPlane = new MyThreeCube({
+            center:[115.23,39.55,0],
+            geometry:[100,50,20,1],
+        });
+        //console.log(myPlane);
+        c3js.add(myPlane);
+
+        let myline = new MyThreeLine({
+            center:[115.232,39.55,0],
+            geometry:[100,50,20,1],
+        });
+        c3js.add(myline);
+        var composer;
+        startMSAA();
+        //渲染cesium和3js
+        render();
+        flyTo([115.23,39.55,1000]);
+        //drawBufferPolygon();
+        function render(){
+            requestAnimationFrame(render);
+            c3js.loop();
+            composer.render();
+        }
+
+        function flyTo(center){
+            window.viewer.entities.add({
+                name : 'Polygon',
+                polygon : {
+                    hierarchy : Cesium.Cartesian3.fromDegreesArray([
+                        extent[0], extent[1],
+                        extent[2], extent[1],
+                        extent[2], extent[3],
+                        extent[0], extent[3],
+                    ]),
+                    material : Cesium.Color.RED.withAlpha(0.2)
+                }
+            });
+            window.viewer.camera.flyTo({
+                destination:Cesium.Cartesian3.fromDegrees(center[0],center[1],center[2]),
+            });
+        }
+
+        function drawBufferPolygon(){
+            let pp = [[115.235,39.55],[115.238,39.55],[115.238,39.553],[115.235,39.553]];
+            let line1 = turf.lineString(pp);
+            let linebuffer = turf.buffer(line1,0.0025);
+            let coord = linebuffer.geometry.coordinates[0];
+            let lineCoord = [];
+            for(let i in coord){
+                lineCoord.push(...coord[i]);
+            }
+            console.log(lineCoord);
+            window.viewer.entities.add({
+                polygon:{
+                    hierarchy : Cesium.Cartesian3.fromDegreesArray(lineCoord),
+                    material : Cesium.Color.WHITE,
+                }
+            });
+        }
+
+        function startMSAA() {
+            // Setup render pass
+            var renderScene = new THREE.RenderPass(window.three.scene, window.three.camera);
+
+            // 初始化bloomPass
+            var bloomPass = new THREE.UnrealBloomPass(
+                // 没研究过这些参数的意义 会提上日程
+                new THREE.Vector2(window.innerWidth, window.innerHeight),
+                1.5,
+                0.4,
+                0.85
+            );
+            // 一些参数 可以调整看效果
+            bloomPass.threshold = 0.36;
+            bloomPass.strength = 0.6;
+            bloomPass.radius = 0;
+
+            // effectCopy
+            var effectCopy = new THREE.ShaderPass(THREE.CopyShader);
+            // 让effectCopy渲染到屏幕上 没这句不会再屏幕上渲染
+            effectCopy.renderToScreen = true;
+
+            var FXAAShaderPass = new THREE.ShaderPass(THREE.FXAAShader);
+            FXAAShaderPass.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight);
+            FXAAShaderPass.renderToScreen = true;
+
+            var parameters = {
+                alpha:true,
+                antialias:true,
+            };
+
+            var renderTarget = new THREE.WebGLRenderTarget( window.innerWidth, window.innerHeight, parameters );
+
+            // 初始化 composer
+            composer = new THREE.EffectComposer(window.three.renderer,renderTarget);
+            // 模版缓冲（stencil buffer） https://blog.csdn.net/silangquan/article/details/46608915
+            composer.renderTarget1.stencilBuffer = true;
+            composer.renderTarget2.stencilBuffer = true;
+            composer.setSize(window.innerWidth, window.innerHeight);
+            composer.addPass(renderScene);
+            composer.addPass(bloomPass);
+            composer.addPass(FXAAShaderPass);
+            composer.addPass(effectCopy);
+        }
+    </script>
+  </body>
+</html>
